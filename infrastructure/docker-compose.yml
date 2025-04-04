@@ -1,0 +1,20 @@
+services:
+  frontend:
+    container_name: gravitrain-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - 50065:40065
+    volumes:
+      - ./frontend:/var/www/html
+  backend:
+    container_name: gravitrain-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - 50066:40066
+    volumes:
+      - ./backend:/var/www/html
+  

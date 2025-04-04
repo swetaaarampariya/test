@@ -1,0 +1,77 @@
+name: Deployment to Staging Server (Frontend)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          name: id_rsa_github
+          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+
+      - name: Ensure correct permissions on remote server
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github ubuntu@43.204.175.127 "
+            sudo mkdir -p /var/www/html/gravitrain/frontend
+            sudo chown -R ubuntu:ubuntu /var/www/html/gravitrain/frontend
+            sudo chmod -R 775 /var/www/html/gravitrain/frontend
+          "
+
+      - name: Copy files to remote server (excluding .git and infrastructure)
+        run: |
+          rsync -avz --delete --force -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github" \
+            --exclude=infrastructure \
+            --exclude=".git*" \
+            --exclude=logs \
+            --exclude=src/public/backups \
+            ./ ubuntu@43.204.175.127:/var/www/html/gravitrain/frontend/
+
+      - name: Copy Dockerfile to remote server
+        run: |
+          rsync -avz --delete --force -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github" \
+            ./infrastructure/Dockerfile \
+            ubuntu@43.204.175.127:/var/www/html/gravitrain/frontend/
+
+      - name: Copy .env.development to remote server
+        run: |
+          rsync -avz --delete --force -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github" \
+            ./infrastructure/.env \
+            ubuntu@43.204.175.127:/var/www/html/gravitrain/frontend/
+
+      - name: Cleanup and fix permissions before build
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github ubuntu@43.204.175.127 "
+            sudo rm -rf /var/www/html/gravitrain/frontend/.next
+            sudo mkdir -p /var/www/html/gravitrain/frontend/.next
+            sudo chown -R ubuntu:ubuntu /var/www/html/gravitrain/frontend
+            sudo chmod -R 775 /var/www/html/gravitrain/frontend
+          "
+
+      - name: Final ownership fix before build
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github ubuntu@43.204.175.127 "
+            sudo chown -R ubuntu:ubuntu /var/www/html/gravitrain/frontend
+          "
+
+      - name: Run npm install and build
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github ubuntu@43.204.175.127 "
+            cd /var/www/html/gravitrain/frontend && sudo npm install && sudo npm run build
+          "
+
+      - name: Restart Docker containers
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_github ubuntu@43.204.175.127 "
+            cd /var/www/html/gravitrain/ && sudo docker compose down && sudo docker compose up -d
+          "
